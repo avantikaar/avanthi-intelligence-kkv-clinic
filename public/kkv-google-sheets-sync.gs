@@ -36,7 +36,7 @@ function kkvOnEdit(e) {
   const row = {};
   headers.forEach((h,i)=>{ if(h) row[h] = values[i]; });
   if (Object.values(row).every(v=>String(v||"").trim()==="")) return;
-  kkvSendRow(sh.getName(), row, rowNum);
+  kkvSendRow(sh.getName(), row, rowNum, "row_edit");
 }
 function kkvSyncAll() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -51,7 +51,7 @@ function kkvSyncAll() {
       if(vals.every(v=>String(v||"").trim()==="")) return;
       const row={}; headers.forEach((h,j)=>{if(h) row[h]=vals[j];});
       scanned++;
-      const result=kkvSendRow(tab,row,i+2);
+      const result=kkvSendRow(tab,row,i+2,"sync_all");
       if(result && result.ok) { if(result.created) created++; else if(result.updated) updated++; }
       else rejected++;
     });
@@ -60,7 +60,7 @@ function kkvSyncAll() {
   Logger.log(msg);
   SpreadsheetApp.getUi().alert(msg);
 }
-function kkvSendRow(module,row,rowNumber) {
+function kkvSendRow(module,row,rowNumber,action) {
   const props=PropertiesService.getScriptProperties();
   const url=props.getProperty("KKV_WEBHOOK_URL");
   const secret=props.getProperty("KKV_WEBHOOK_SECRET");
@@ -69,7 +69,7 @@ function kkvSendRow(module,row,rowNumber) {
     method:"post",
     contentType:"application/json",
     headers:{"x-kkv-webhook-secret":secret},
-    payload:JSON.stringify({module:module,row:row,row_number:rowNumber}),
+    payload:JSON.stringify({module:module,row:row,row_number:rowNumber,action:action||"manual"}),
     muteHttpExceptions:true
   });
   const code=response.getResponseCode();

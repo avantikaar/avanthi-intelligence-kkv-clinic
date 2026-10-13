@@ -1,5 +1,6 @@
 import { db, config } from "hatchable";
 import { MODULES, validate, clean, isoDate } from "lib/clinic.js";
+import { sendWhatsAppTemplate, whatsappStatus } from "lib/whatsapp.js";
 export const access = "public";
 export const methods = ["POST"];
 
@@ -8,6 +9,8 @@ function mapRow(moduleName,row) {
   const out={id:clean(row[spec.id])};
   for(const [header,col] of Object.entries(spec.fields)) {
     let v=clean(row[header]);
+    if(col==="whatsapp_opt_in" && v===null) continue;
+    if(col==="whatsapp_opt_in") { out[col]=["true","yes","y","1","opted in"].includes(String(v||"").trim().toLowerCase()); continue; }
     if(v===null) { out[col]=null; continue; }
     if(col.endsWith("_date")) {
       const d=isoDate(v);
@@ -65,6 +68,24 @@ export default async function(req,res) {
   await db.query("INSERT INTO "+spec.table+" ("+cols.join(",")+") VALUES ("+cols.map((_,i)=>"$"+(i+1)).join(",")+") ON CONFLICT (id) DO UPDATE SET "+updates+",updated_at=NOW(),archived_at=NULL",cols.map(k=>mapped[k]));
   const created=!existing.rows.length;
   await db.query("INSERT INTO clinic_sync_runs (source_tab,operation,record_id,result,message,rows_created,rows_updated) VALUES ($1,'webhook_upsert',$2,'success',$3,$4,$5)",[moduleName,mapped.id,created?"Created from Google Sheets":"Updated from Google Sheets",created?1:0,created?0:1]);
-  await db.query("INSERT INTO clinic_audit_logs (actor,action,entity_type,entity_id,details) VALUES ('google_sheets','sheet_upsert',$1,$2,$3::jsonb)",[moduleName,mapped.id,JSON.stringify({source:"google_apps_script",row_number:b.row_number||null})]);
+  await db.query("INSERT INTO clinic_audit_logs (actor,action,entity_type,entity_id,details) VALUES ('google_sheets','sheet_upsert',$1,$2,$3::jsonb)",[moduleName,mapped.id,JSON.stringify({source:"google_apps_script",row_number:b.row_number||null,action:b.action||null})]);
+  // Only a live onEdit event may trigger a booking confirmation. Initial bulk syncs never send messages.
+  if(moduleName==="Appointments" && b.action==="row_edit" && created && ["Booked","Confirmed","Rescheduled"].includes(String(mapped.status||"Booked"))) {
+    const patient=await db.query("SELECT id,patient_name,phone,whatsapp_opt_in FROM clinic_patients WHERE id=$1 AND archived_at IS NULL",[mapped.patient_id]);
+    const p=patient.rows[0];
+    if(p?.whatsapp_opt_in && p.phone) {
+      if(whatsappStatus().configured) {
+        try {
+          const sent=await sendWhatsAppTemplate({to:p.phone,templateName:whatsappStatus().confirmation_template,parameters:[p.patient_name||"Patient",String(mapped.appointment_date||""),String(mapped.appointment_time||"Please contact the clinic")]});
+          await db.query("INSERT INTO clinic_notification_attempts (related_record_id,channel,recipient,mode,status,provider_message_id) VALUES ($1,'whatsapp',$2,'live','accepted',$3)",[mapped.id,sent.recipient,sent.message_id]);
+          await db.query("INSERT INTO clinic_automation_logs (rule_id,record_id,dedupe_key,action,status,message) VALUES ('appointment_confirmation',$1,$2,'send_whatsapp_template','accepted','Sheet booking confirmation accepted by Meta') ON CONFLICT (dedupe_key) DO NOTHING",[mapped.id,"whatsapp:appointment_confirmation:"+mapped.id]);
+        } catch(err) {
+          await db.query("INSERT INTO clinic_notification_attempts (related_record_id,channel,recipient,mode,status,error_message) VALUES ($1,'whatsapp',$2,'live','failed',$3)",[mapped.id,p.phone,String(err.message||err).slice(0,500)]);
+        }
+      } else {
+        await db.query("INSERT INTO clinic_notification_attempts (related_record_id,channel,recipient,mode,status,error_message) VALUES ($1,'whatsapp',$2,'demo','skipped','WhatsApp credentials not configured')",[mapped.id,p.phone]);
+      }
+    }
+  }
   return res.json({ok:true,created,updated:!created,module:moduleName,record_id:mapped.id});
 }
