@@ -33,6 +33,7 @@ export default async function(req,res) {
   const errs=validate(moduleName,row);
   if(errs.length){results.rejected++;results.errors.push({row:i+1,id:row[spec.id]||null,errors:errs});continue;}
   const mapped=mapRow(moduleName,row);
+  if(moduleName==="Appointments" && !["Booked","Confirmed","Arrived","In Consultation","Completed","Cancelled","Missed","Rescheduled"].includes(String(row.Status||"Booked"))) { results.rejected++; results.errors.push({row:i+1,id:mapped.id,errors:["Invalid appointment Status"]}); continue; }
   if(moduleName!=="Patients" && moduleName!=="Leads" && moduleName!=="Campaigns" && mapped.patient_id){
    const exists=await db.query("SELECT id FROM clinic_patients WHERE id=$1 AND archived_at IS NULL",[mapped.patient_id]);
    if(!exists.rows.length){results.rejected++;results.errors.push({row:i+1,id:mapped.id,errors:["Patient_ID does not exist in Patients"]});continue;}
@@ -45,9 +46,9 @@ export default async function(req,res) {
   const vals=cols.map(k=>mapped[k]);
   const updates=cols.filter(k=>k!=="id").map(k=>k+"=EXCLUDED."+k).join(",");
   const existing=await db.query("SELECT id FROM "+spec.table+" WHERE id=$1",[mapped.id]);
-  const sql="INSERT INTO "+spec.table+" ("+cols.join(",")+") VALUES ("+cols.map((_,n)=>"$"+(n+1)).join(",")+") ON CONFLICT (id) DO UPDATE SET "+updates+", updated_at=NOW(), archived_at=NULL RETURNING (xmax=0) AS inserted";
+  const sql="INSERT INTO "+spec.table+" ("+cols.join(",")+") VALUES ("+cols.map((_,n)=>"$"+(n+1)).join(",")+") ON CONFLICT (id) DO UPDATE SET "+updates+", updated_at=NOW(), archived_at=NULL RETURNING id";
   const q=await db.query(sql,vals);
-  if(q.rows[0]?.inserted) results.created++; else results.updated++;
+  if(existing.rows.length) results.updated++; else results.created++;
  }
  await db.query("INSERT INTO clinic_audit_logs (actor,action,entity_type,details) VALUES ($1,$2,$3,$4::jsonb)",[req.member?.email||"staff","record_import",moduleName,JSON.stringify(results)]);
  return res.json(results);
