@@ -1,6 +1,6 @@
 import { db, config } from "hatchable";
 import { MODULES, validate, clean, isoDate } from "lib/clinic.js";
-export const access = "admin";
+export const access = "public";
 export const methods = ["POST"];
 
 function mapRow(moduleName,row) {

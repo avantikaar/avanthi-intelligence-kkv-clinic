@@ -1,78 +1,71 @@
 /**
- * Google Apps Script — KKV 360 clinic sync
- * Install from Extensions > Apps Script, save, then run installKKVTrigger once.
- * Configure KKV_WEBHOOK_URL and KKV_WEBHOOK_SECRET in Script Properties.
- * Use the exact tab names: Patients, Appointments, Physiotherapy, Physio_Sessions,
- * Leads, Follow_Ups, Payments, Campaigns. Row 1 must contain the defined headers.
+ * KKV 360 Google Sheets -> Hatchable sync bridge.
+ * Run installKKVTrigger() once and kkvSyncAll() for initial import.
+ * Script Properties required:
+ * KKV_WEBHOOK_URL = https://avanthi.hatchable.site/api/sheets-webhook
+ * KKV_WEBHOOK_SECRET = the value stored in Hatchable as GOOGLE_APPS_SCRIPT_WEBHOOK_SECRET
  */
-const KKV_TABS = new Set(["Patients","Appointments","Physiotherapy","Physio_Sessions","Leads","Follow_Ups","Payments","Campaigns"]);
-
+const KKV_TABS = ["Patients","Appointments","Physiotherapy","Physio_Sessions","Leads","Follow_Ups","Payments","Campaigns"];
 function installKKVTrigger() {
-  const ss = SpreadsheetApp.getActive();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) throw new Error("Open this script from Extensions > Apps Script inside the clinic spreadsheet.");
   ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === "kkvOnEdit").forEach(t => ScriptApp.deleteTrigger(t));
   ScriptApp.newTrigger("kkvOnEdit").forSpreadsheet(ss).onEdit().create();
-  Logger.log("KKV edit trigger installed for " + ss.getName());
+  SpreadsheetApp.getUi().alert("KKV sync trigger installed. Run kkvSyncAll() once to import existing rows.");
 }
-
 function kkvOnEdit(e) {
   if (!e || !e.range) return;
-  const sheet = e.range.getSheet();
-  const tab = sheet.getName();
-  if (!KKV_TABS.has(tab) || e.range.getRow() < 2) return;
-  const lock = LockService.getScriptLock();
-  if (!lock.tryLock(5000)) throw new Error("KKV sync is busy; edit again or run kkvSyncAll.");
-  try {
-    const lastCol = sheet.getLastColumn();
-    const headers = sheet.getRange(1, 1, 1, lastCol).getDisplayValues()[0].map(s => String(s).trim());
-    const first = e.range.getRow();
-    const count = e.range.getNumRows();
-    const values = sheet.getRange(first, 1, count, lastCol).getDisplayValues();
-    values.forEach((row, i) => {
-      if (row.every(v => !String(v).trim())) return;
-      const record = {};
-      headers.forEach((h, j) => { if (h) record[h] = row[j]; });
-      const updatedHeader = headers.indexOf("Updated_At");
-      if (updatedHeader >= 0 && !record.Updated_At) record.Updated_At = new Date().toISOString();
-      kkvPost(tab, record, first + i);
-    });
-  } finally {
-    lock.releaseLock();
-  }
+  const sh = e.range.getSheet();
+  if (!KKV_TABS.includes(sh.getName()) || e.range.getRow() === 1) return;
+  const rowNum = e.range.getRow();
+  const lastCol = sh.getLastColumn();
+  if (lastCol < 1) return;
+  const headers = sh.getRange(1,1,1,lastCol).getDisplayValues()[0].map(v=>String(v).trim());
+  const values = sh.getRange(rowNum,1,1,lastCol).getDisplayValues()[0];
+  const row = {};
+  headers.forEach((h,i)=>{ if(h) row[h] = values[i]; });
+  if (Object.values(row).every(v=>String(v||"").trim()==="")) return;
+  kkvSendRow(sh.getName(), row, rowNum);
 }
-
 function kkvSyncAll() {
-  const ss = SpreadsheetApp.getActive();
-  let sent = 0;
-  ss.getSheets().forEach(sheet => {
-    const tab = sheet.getName();
-    if (!KKV_TABS.has(tab) || sheet.getLastRow() < 2) return;
-    const values = sheet.getDataRange().getDisplayValues();
-    const headers = values[0].map(s => String(s).trim());
-    values.slice(1).forEach((row, i) => {
-      if (row.every(v => !String(v).trim())) return;
-      const record = {};
-      headers.forEach((h, j) => { if (h) record[h] = row[j]; });
-      kkvPost(tab, record, i + 2);
-      sent++;
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let created=0, updated=0, rejected=0, scanned=0;
+  KKV_TABS.forEach(tab => {
+    const sh=ss.getSheetByName(tab);
+    if(!sh) { Logger.log("Skipped missing tab: "+tab); return; }
+    const values=sh.getDataRange().getDisplayValues();
+    if(values.length<2) return;
+    const headers=values[0].map(v=>String(v).trim());
+    values.slice(1).forEach((vals,i)=>{
+      if(vals.every(v=>String(v||"").trim()==="")) return;
+      const row={}; headers.forEach((h,j)=>{if(h) row[h]=vals[j];});
+      scanned++;
+      const result=kkvSendRow(tab,row,i+2);
+      if(result && result.ok) { if(result.created) created++; else if(result.updated) updated++; }
+      else rejected++;
     });
   });
-  Logger.log("Rows submitted to KKV sync: " + sent);
+  const msg="KKV initial sync finished. Scanned="+scanned+", created="+created+", updated="+updated+", rejected="+rejected+". Check Hatchable Sync history for details.";
+  Logger.log(msg);
+  SpreadsheetApp.getUi().alert(msg);
 }
-
-function kkvPost(tab, record, rowNumber) {
-  const props = PropertiesService.getScriptProperties();
-  const url = props.getProperty("KKV_WEBHOOK_URL");
-  const secret = props.getProperty("KKV_WEBHOOK_SECRET");
-  if (!url || !secret) throw new Error("Set KKV_WEBHOOK_URL and KKV_WEBHOOK_SECRET in Script Properties first.");
-  const response = UrlFetchApp.fetch(url, {
-    method: "post",
-    contentType: "application/json",
-    headers: { "x-kkv-webhook-secret": secret },
-    payload: JSON.stringify({ module: tab, row: record, row_number: rowNumber, source: "google_apps_script" }),
-    muteHttpExceptions: true
+function kkvSendRow(module,row,rowNumber) {
+  const props=PropertiesService.getScriptProperties();
+  const url=props.getProperty("KKV_WEBHOOK_URL");
+  const secret=props.getProperty("KKV_WEBHOOK_SECRET");
+  if(!url || !secret) throw new Error("Set KKV_WEBHOOK_URL and KKV_WEBHOOK_SECRET in Apps Script > Project Settings > Script properties.");
+  const response=UrlFetchApp.fetch(url,{
+    method:"post",
+    contentType:"application/json",
+    headers:{"x-kkv-webhook-secret":secret},
+    payload:JSON.stringify({module:module,row:row,row_number:rowNumber}),
+    muteHttpExceptions:true
   });
-  const code = response.getResponseCode();
-  if (code < 200 || code >= 300) throw new Error("KKV sync failed for " + tab + " row " + rowNumber + ": HTTP " + code + " " + response.getContentText());
-  const result = JSON.parse(response.getContentText());
-  if (!result.ok || result.rejected) throw new Error("KKV sync rejected " + tab + " row " + rowNumber + ": " + response.getContentText());
+  const code=response.getResponseCode();
+  let data={}; try { data=JSON.parse(response.getContentText()); } catch(e) {}
+  if(code<200 || code>=300 || !data.ok) {
+    console.error("KKV sync failed tab="+module+" row="+rowNumber+" HTTP="+code+" "+response.getContentText());
+    return {ok:false,error:data.error||response.getContentText()};
+  }
+  return data;
 }
