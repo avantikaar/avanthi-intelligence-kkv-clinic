@@ -1,0 +1,26 @@
+name = "Avanthi Intelligence — KKV 360 Clinic Operations"
+description = "Database-backed clinic operations, spreadsheet sync and workflow automation."
+[auth]
+enabled = true
+signup = "invite"
+login_path = "/login"
+
+[[secret]]
+name = "GOOGLE_SERVICE_ACCOUNT_JSON"
+required = false
+description = "Service-account JSON for server-side Google Sheets access. Share only the selected clinic spreadsheet with the service-account email."
+
+[[secret]]
+name = "GOOGLE_APPS_SCRIPT_WEBHOOK_SECRET"
+required = false
+description = "Shared secret used to verify authorized Google Apps Script change notifications."
+
+[[secret]]
+name = "WHATSAPP_ACCESS_TOKEN"
+required = false
+description = "Optional WhatsApp Business Cloud API token for approved clinic notifications."
+
+[[secret]]
+name = "WHATSAPP_PHONE_NUMBER_ID"
+required = false
+description = "WhatsApp Business Cloud API phone number ID."
