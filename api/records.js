@@ -8,7 +8,7 @@ function mapRow(moduleName,row) {
   let v=clean(row[header]);
   if(v===null) out[col]=null;
   else if(col.endsWith("_date")) { const d=isoDate(v); if(!d) throw new Error("Invalid date in "+header); out[col]=d; }
-  else if(col==="source_updated_at" || col==="last_reminder_at" || col==="first_response_at" || col==="completed_at") out[col]=v;
+  else if(col==="source_updated_at" || col==="last_reminder_at" || col==="first_response_at" || col==="completed_at") { const d=new Date(v); if(Number.isNaN(d.getTime())) throw new Error("Invalid timestamp in "+header); out[col]=d.toISOString(); }
   else if(["amount","total_sessions","campaign_cost","leads_generated","attributed_appointments"].includes(col)) out[col]=Number(v);
   else out[col]=v;
  }
