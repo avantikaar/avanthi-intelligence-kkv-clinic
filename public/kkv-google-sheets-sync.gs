@@ -11,7 +11,7 @@ function installKKVTrigger() {
   if (!ss) throw new Error("Open this script from Extensions > Apps Script inside the clinic spreadsheet.");
   ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === "kkvOnEdit").forEach(t => ScriptApp.deleteTrigger(t));
   ScriptApp.newTrigger("kkvOnEdit").forSpreadsheet(ss).onEdit().create();
-  SpreadsheetApp.getUi().alert("KKV sync trigger installed. Run kkvSyncAll() once to import existing rows.");
+  Logger.log("KKV sync trigger installed successfully. Do not run kkvSyncAll on a large sheet yet; test one edited row first.");
 }
 function kkvOnEdit(e) {
   if (!e || !e.range) return;
