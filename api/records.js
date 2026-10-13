@@ -1,11 +1,14 @@
 import { db } from "hatchable";
 import { MODULES, validate, clean, isoDate } from "lib/clinic.js";
+import { sendWhatsAppTemplate, whatsappStatus } from "lib/whatsapp.js";
 export const access = "member";
 export const methods = ["GET","POST","PUT"];
 function mapRow(moduleName,row) {
  const s=MODULES[moduleName]; const out={id:clean(row[s.id])};
  for(const [header,col] of Object.entries(s.fields)) {
   let v=clean(row[header]);
+  if(col==="whatsapp_opt_in" && v===null) continue;
+  if(col==="whatsapp_opt_in") { out[col]=["true","yes","y","1","opted in"].includes(String(v||"").trim().toLowerCase()); continue; }
   if(v===null) out[col]=null;
   else if(col.endsWith("_date")) { const d=isoDate(v); if(!d) throw new Error("Invalid date in "+header); out[col]=d; }
   else if(col==="source_updated_at" || col==="last_reminder_at" || col==="first_response_at" || col==="completed_at") { const d=new Date(v); if(Number.isNaN(d.getTime())) throw new Error("Invalid timestamp in "+header); out[col]=d.toISOString(); }
@@ -61,6 +64,28 @@ export default async function(req,res) {
   const sql="INSERT INTO "+spec.table+" ("+cols.join(",")+") VALUES ("+cols.map((_,n)=>"$"+(n+1)).join(",")+") ON CONFLICT (id) DO UPDATE SET "+updates+", updated_at=NOW(), archived_at=NULL RETURNING id";
   await db.query(sql,vals);
   if(existing.rows.length) results.updated++; else results.created++;
+  // Send a confirmation only for a newly created single appointment from the staff form.
+  // Bulk imports and sheet syncs never trigger outbound messages.
+  if(moduleName==="Appointments" && body.row && !existing.rows.length && ["Booked","Confirmed","Rescheduled"].includes(String(row.Status||"Booked"))) {
+   const patient=await db.query("SELECT id,patient_name,phone,whatsapp_opt_in FROM clinic_patients WHERE id=$1 AND archived_at IS NULL",[mapped.patient_id]);
+   const p=patient.rows[0];
+   if(p?.whatsapp_opt_in && p.phone && whatsappStatus().configured) {
+    const dedupe="whatsapp:appointment_confirmation:"+mapped.id;
+    const prior=await db.query("SELECT id FROM clinic_automation_logs WHERE dedupe_key=$1",[dedupe]);
+    if(!prior.rows.length) {
+     try {
+      const sent=await sendWhatsAppTemplate({to:p.phone,templateName:whatsappStatus().confirmation_template,parameters:[p.patient_name||"Patient",String(mapped.appointment_date||""),String(mapped.appointment_time||"Please contact the clinic")]});
+      await db.query("INSERT INTO clinic_notification_attempts (related_record_id,channel,recipient,mode,status,provider_message_id) VALUES ($1,'whatsapp',$2,'live','accepted',$3)",[mapped.id,sent.recipient,sent.message_id]);
+      await db.query("INSERT INTO clinic_automation_logs (rule_id,record_id,dedupe_key,action,status,message) VALUES ('appointment_confirmation',$1,$2,'send_whatsapp_template','accepted','Appointment confirmation accepted by Meta')",[mapped.id,dedupe]);
+     } catch(err) {
+      await db.query("INSERT INTO clinic_notification_attempts (related_record_id,channel,recipient,mode,status,error_message) VALUES ($1,'whatsapp',$2,'live','failed',$3)",[mapped.id,p.phone,String(err.message||err).slice(0,500)]);
+      await db.query("INSERT INTO clinic_automation_logs (rule_id,record_id,dedupe_key,action,status,message) VALUES ('appointment_confirmation',$1,$2,'send_whatsapp_template','failed',$3)",[mapped.id,dedupe,String(err.message||err).slice(0,500)]);
+     }
+    }
+   } else if(p?.whatsapp_opt_in && p.phone) {
+    await db.query("INSERT INTO clinic_notification_attempts (related_record_id,channel,recipient,mode,status,error_message) VALUES ($1,'whatsapp',$2,'demo','skipped','WhatsApp credentials not configured')",[mapped.id,p.phone]);
+   }
+  }
  }
  await db.query("INSERT INTO clinic_sync_runs (source_tab,operation,result,message,rows_created,rows_updated,rows_skipped,rows_rejected) VALUES ($1,'csv_import',$2,$3,$4,$5,$6,$7)",[moduleName,results.rejected?"completed_with_errors":"success","CSV import summary",results.created,results.updated,results.skipped,results.rejected]);
  await db.query("INSERT INTO clinic_audit_logs (actor,action,entity_type,details) VALUES ($1,$2,$3,$4::jsonb)",[req.member?.email||"staff","record_import",moduleName,JSON.stringify(results)]);

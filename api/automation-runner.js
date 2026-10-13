@@ -1,4 +1,5 @@
 import { db } from "hatchable";
+import { sendWhatsAppTemplate, whatsappStatus } from "lib/whatsapp.js";
 export const access = "scheduler";
 export const schedule = "0 * * * *";
 
@@ -25,8 +26,23 @@ export default async function(req,res) {
     for(const a of q.rows) actions.push(await makeTask({rule:"missed_followup",recordId:a.id,patientId:a.patient_id,type:"Missed appointment outreach",dueDate:today,priority:"High",message:"Appointment is marked Missed; contact patient and record outcome."}));
   }
   if(enabled.has("appointment_reminders")) {
-    const q=await db.query("SELECT id,patient_id,appointment_date,appointment_time,status FROM clinic_appointments WHERE archived_at IS NULL AND appointment_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '1 day' AND status IN ('Booked','Confirmed','Rescheduled') AND COALESCE(reminder_status,'') NOT IN ('Sent','sent')");
-    for(const a of q.rows) actions.push(await makeTask({rule:"appointment_reminders",recordId:a.id,patientId:a.patient_id,type:"Appointment reminder",dueDate:a.appointment_date,priority:"Normal",message:"Reminder due for appointment on "+a.appointment_date+" at "+(a.appointment_time||"time not recorded")+". Task only; no message was sent."}));
+    const q=await db.query("SELECT a.id,a.patient_id,a.appointment_date,a.appointment_time,a.status,p.patient_name,p.phone,p.whatsapp_opt_in FROM clinic_appointments a JOIN clinic_patients p ON p.id=a.patient_id WHERE a.archived_at IS NULL AND p.archived_at IS NULL AND a.appointment_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '1 day' AND a.status IN ('Booked','Confirmed','Rescheduled')");
+    for(const a of q.rows) {
+      actions.push(await makeTask({rule:"appointment_reminders",recordId:a.id,patientId:a.patient_id,type:"Appointment reminder",dueDate:a.appointment_date,priority:"Normal",message:"Reminder due for appointment on "+a.appointment_date+" at "+(a.appointment_time||"time not recorded")+". Staff task remains available even if WhatsApp is not enabled."}));
+      if(a.whatsapp_opt_in && a.phone && whatsappStatus().configured) {
+        const accepted=await db.query("SELECT id FROM clinic_notification_attempts WHERE related_record_id=$1 AND channel='whatsapp' AND status='accepted' LIMIT 1",["reminder:"+a.id]);
+        if(!accepted.rows.length) {
+          try {
+            const sent=await sendWhatsAppTemplate({to:a.phone,templateName:whatsappStatus().reminder_template,parameters:[a.patient_name||"Patient",String(a.appointment_date||""),String(a.appointment_time||"Please contact the clinic")]});
+            await db.query("INSERT INTO clinic_notification_attempts (related_record_id,channel,recipient,mode,status,provider_message_id) VALUES ($1,'whatsapp',$2,'live','accepted',$3)",["reminder:"+a.id,sent.recipient,sent.message_id]);
+            await db.query("UPDATE clinic_appointments SET reminder_status='Sent',last_reminder_at=NOW(),updated_at=NOW() WHERE id=$1",[a.id]);
+            await db.query("INSERT INTO clinic_automation_logs (rule_id,record_id,dedupe_key,action,status,message) VALUES ('appointment_reminders',$1,$2,'send_whatsapp_template','accepted','Appointment reminder accepted by Meta') ON CONFLICT (dedupe_key) DO NOTHING",[a.id,"whatsapp:appointment_reminder:"+a.id+":"+a.appointment_date]);
+          } catch(err) {
+            await db.query("INSERT INTO clinic_notification_attempts (related_record_id,channel,recipient,mode,status,error_message) VALUES ($1,'whatsapp',$2,'live','failed',$3)",["reminder:"+a.id,a.phone,String(err.message||err).slice(0,500)]);
+          }
+        }
+      }
+    }
   }
   if(enabled.has("physio_reminders")) {
     const q=await db.query("SELECT id,patient_id,session_date,attendance_status FROM clinic_physio_sessions WHERE archived_at IS NULL AND session_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '1 day' AND COALESCE(attendance_status,'Scheduled')='Scheduled'");
