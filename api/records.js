@@ -34,6 +34,8 @@ export default async function(req,res) {
   if(errs.length){results.rejected++;results.errors.push({row:i+1,id:row[spec.id]||null,errors:errs});continue;}
   const mapped=mapRow(moduleName,row);
   if(moduleName==="Appointments" && !["Booked","Confirmed","Arrived","In Consultation","Completed","Cancelled","Missed","Rescheduled"].includes(String(row.Status||"Booked"))) { results.rejected++; results.errors.push({row:i+1,id:mapped.id,errors:["Invalid appointment Status"]}); continue; }
+  if(moduleName==="Physio_Sessions" && row.Attendance_Status && !["Scheduled","Attended","Completed","Absent","Cancelled"].includes(String(row.Attendance_Status))) { results.rejected++; results.errors.push({row:i+1,id:mapped.id,errors:["Invalid Attendance_Status"]}); continue; }
+  if(moduleName==="Follow_Ups" && row.Status && !["Open","In Progress","Completed","Closed","On Hold"].includes(String(row.Status))) { results.rejected++; results.errors.push({row:i+1,id:mapped.id,errors:["Invalid Follow_Up Status"]}); continue; }
   if(moduleName!=="Patients" && moduleName!=="Leads" && moduleName!=="Campaigns" && mapped.patient_id){
    const exists=await db.query("SELECT id FROM clinic_patients WHERE id=$1 AND archived_at IS NULL",[mapped.patient_id]);
    if(!exists.rows.length){results.rejected++;results.errors.push({row:i+1,id:mapped.id,errors:["Patient_ID does not exist in Patients"]});continue;}

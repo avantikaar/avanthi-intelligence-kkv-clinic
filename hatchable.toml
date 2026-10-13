@@ -2,6 +2,7 @@ name = "Avanthi Intelligence — KKV 360 Clinic Operations"
 description = "Database-backed clinic operations, spreadsheet sync and workflow automation."
 [auth]
 enabled = true
+providers = ["email"]
 signup = "invite"
 login_path = "/login"
 
