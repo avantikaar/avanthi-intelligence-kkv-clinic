@@ -31,6 +31,7 @@ export default async function(req,res) {
   const got=String(req.headers["x-kkv-webhook-secret"]||"");
   if(!secret || got!==secret) return res.status(401).json({ok:false,error:"Webhook authentication failed or secret not configured"});
   const b=req.body||{};
+  if (b.action === "ping") return res.json({ok:true,ping:true,message:"KKV webhook reachable and secret accepted"});
   const moduleName=String(b.module||b.tab||"");
   const spec=MODULES[moduleName];
   if(!spec) return res.status(400).json({ok:false,error:"Unknown module/tab",allowed:Object.keys(MODULES)});

@@ -13,6 +13,17 @@ function installKKVTrigger() {
   ScriptApp.newTrigger("kkvOnEdit").forSpreadsheet(ss).onEdit().create();
   Logger.log("KKV sync trigger installed successfully. Do not run kkvSyncAll on a large sheet yet; test one edited row first.");
 }
+function kkvTestConnection() {
+  const props=PropertiesService.getScriptProperties();
+  const url=props.getProperty("KKV_WEBHOOK_URL");
+  const secret=props.getProperty("KKV_WEBHOOK_SECRET");
+  if(!url || !secret) throw new Error("Set KKV_WEBHOOK_URL and KKV_WEBHOOK_SECRET in Project Settings > Script properties.");
+  const response=UrlFetchApp.fetch(url,{method:"post",contentType:"application/json",headers:{"x-kkv-webhook-secret":secret},payload:JSON.stringify({action:"ping"}),muteHttpExceptions:true});
+  const body=response.getContentText();
+  Logger.log("KKV webhook test HTTP "+response.getResponseCode()+": "+body);
+  if(response.getResponseCode()!==200) throw new Error("Webhook test failed. HTTP "+response.getResponseCode()+": "+body);
+  return body;
+}
 function kkvOnEdit(e) {
   if (!e || !e.range) return;
   const sh = e.range.getSheet();
