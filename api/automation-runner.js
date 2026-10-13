@@ -26,7 +26,7 @@ export default async function(req,res) {
     for(const a of q.rows) actions.push(await makeTask({rule:"missed_followup",recordId:a.id,patientId:a.patient_id,type:"Missed appointment outreach",dueDate:today,priority:"High",message:"Appointment is marked Missed; contact patient and record outcome."}));
   }
   if(enabled.has("appointment_reminders")) {
-    const q=await db.query("SELECT a.id,a.patient_id,a.appointment_date,a.appointment_time,a.status,p.patient_name,p.phone,p.whatsapp_opt_in FROM clinic_appointments a JOIN clinic_patients p ON p.id=a.patient_id WHERE a.archived_at IS NULL AND p.archived_at IS NULL AND a.appointment_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '1 day' AND a.status IN ('Booked','Confirmed','Rescheduled')");
+    const q=await db.query("SELECT a.id,a.patient_id,a.appointment_date,a.appointment_time,a.status,p.patient_name,p.phone,p.whatsapp_opt_in FROM clinic_appointments a JOIN clinic_patients p ON p.id=a.patient_id WHERE a.archived_at IS NULL AND p.archived_at IS NULL AND a.appointment_date = ((NOW() AT TIME ZONE 'Asia/Kolkata')::date + 1) AND a.status IN ('Booked','Confirmed','Rescheduled')");
     for(const a of q.rows) {
       actions.push(await makeTask({rule:"appointment_reminders",recordId:a.id,patientId:a.patient_id,type:"Appointment reminder",dueDate:a.appointment_date,priority:"Normal",message:"Reminder due for appointment on "+a.appointment_date+" at "+(a.appointment_time||"time not recorded")+". Staff task remains available even if WhatsApp is not enabled."}));
       if(a.whatsapp_opt_in && a.phone && whatsappStatus().configured) {
