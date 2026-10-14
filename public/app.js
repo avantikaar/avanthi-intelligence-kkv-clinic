@@ -1,7 +1,7 @@
 (function(){
 const API=(window.__HATCHABLE__&&window.__HATCHABLE__.api)||"/api";
 const navItems=[
- ["dashboard","▦","Overview"],["Patients","♙","Patients"],["Appointments","▣","Appointments"],["Leads","◎","Leads"],["Physiotherapy","⌁","Physiotherapy"],["Physio_Sessions","◷","Physio sessions"],["Follow_Ups","✓","Follow-ups"],["Payments","₹","Payments"],["Campaigns","↗","Campaigns"],["automations","✳","Automation rules"],["templates","⇩","Templates & data"],["profile","⚙","Settings"]
+ ["dashboard","▦","Overview"],["Patients","♙","Patients"],["Appointments","▣","Appointments"],["Leads","◎","Leads"],["Physiotherapy","⌁","Physiotherapy"],["Physio_Sessions","◷","Physio sessions"],["Follow_Ups","✓","Follow-ups"],["Payments","₹","Payments"],["Campaigns","↗","Campaigns"],["automations","✳","Automation rules"],["whatsapp","☏","WhatsApp automation"],["templates","⇩","Templates & data"],["profile","⚙","Settings"]
 ];
 const specs={
  Patients:{title:"Patients",desc:"Central patient register. Keep only the information needed for clinic operations.",id:"Patient_ID",fields:[["Patient_ID","Patient ID","required"],["Patient_Name","Patient name","required"],["Phone","Phone number"],["WhatsApp_Opt_In","WhatsApp reminders consent","select:Yes,No"],["Registration_Date","Registration date","date"],["Patient_Type","Patient type","select:New,Repeat"],["Lead_Source","Lead source"],["Record_Status","Record status","select:Active,Inactive,Archived"],["Assigned_Staff","Assigned staff"]]},
