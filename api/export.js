@@ -1,6 +1,6 @@
 import { db } from "hatchable";
 import { MODULES } from "lib/clinic.js";
-export const access = "member";
+export const access = "user";
 export const methods = ["GET"];
 export default async function(req,res){
  const moduleName=String(req.query?.module||"Patients");
