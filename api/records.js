@@ -1,7 +1,7 @@
 import { db } from "hatchable";
 import { MODULES, validate, clean, isoDate } from "lib/clinic.js";
 import { sendWhatsAppTemplate, whatsappStatus } from "lib/whatsapp.js";
-export const access = "member";
+export const access = "user";
 export const methods = ["GET","POST","PUT"];
 function mapRow(moduleName,row) {
  const s=MODULES[moduleName]; const out={id:clean(row[s.id])};
