@@ -88,6 +88,6 @@ export default async function(req,res) {
   }
  }
  await db.query("INSERT INTO clinic_sync_runs (source_tab,operation,result,message,rows_created,rows_updated,rows_skipped,rows_rejected) VALUES ($1,'csv_import',$2,$3,$4,$5,$6,$7)",[moduleName,results.rejected?"completed_with_errors":"success","CSV import summary",results.created,results.updated,results.skipped,results.rejected]);
- await db.query("INSERT INTO clinic_audit_logs (actor,action,entity_type,details) VALUES ($1,$2,$3,$4::jsonb)",[req.member?.email||"staff","record_import",moduleName,JSON.stringify(results)]);
+ await db.query("INSERT INTO clinic_audit_logs (actor,action,entity_type,details) VALUES ($1,$2,$3,$4::jsonb)",[req.user?.email||"staff","record_import",moduleName,JSON.stringify(results)]);
  return res.json(results);
 }

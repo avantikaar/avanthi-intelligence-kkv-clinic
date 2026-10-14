@@ -1,5 +1,5 @@
 import { db } from "hatchable";
-export const access = "admin";
+export const access = "user";
 export const methods = ["GET","POST","PUT"];
 const defaults=[
  {id:"appointment_reminders",name:"Appointment reminders",trigger_type:"appointment_created_or_changed",settings:{hours_before:24,mode:"demo"}},
@@ -21,6 +21,6 @@ export default async function(req,res){
  if(!defaults.some(x=>x.id===id)) return res.status(400).json({error:"Unknown built-in automation rule"});
  const enabled=Boolean(b.enabled);
  const q=await db.query("UPDATE clinic_automation_rules SET enabled=$2,updated_at=NOW() WHERE id=$1 RETURNING *",[id,enabled]);
- await db.query("INSERT INTO clinic_audit_logs (actor,action,entity_type,entity_id,details) VALUES ($1,'toggle_automation','automation_rule',$2,$3::jsonb)",[req.member?.email||"admin",id,JSON.stringify({enabled})]);
+ await db.query("INSERT INTO clinic_audit_logs (actor,action,entity_type,entity_id,details) VALUES ($1,'toggle_automation','automation_rule',$2,$3::jsonb)",[req.user?.email||"staff",id,JSON.stringify({enabled})]);
  res.json({rule:q.rows[0]});
 }

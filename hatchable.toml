@@ -1,20 +1,12 @@
 name = "Avanthi Intelligence — KKV 360 Clinic Operations"
-description = "Database-backed clinic operations, spreadsheet sync and workflow automation."
+description = "Private, database-backed clinic operations and workflow automation with direct in-app data entry."
 [auth]
 enabled = true
 providers = ["email"]
 signup = "invite"
 login_path = "/login"
 
-[[secret]]
-name = "GOOGLE_SERVICE_ACCOUNT_JSON"
-required = false
-description = "Service-account JSON for server-side Google Sheets access. Share only the selected clinic spreadsheet with the service-account email."
-
-[[secret]]
-name = "GOOGLE_APPS_SCRIPT_WEBHOOK_SECRET"
-required = false
-description = "Shared secret used to verify authorized Google Apps Script change notifications."
+# Google Sheets secrets were removed; this app uses direct database entry.
 
 [[secret]]
 name = "WHATSAPP_ACCESS_TOKEN"

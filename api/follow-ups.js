@@ -13,6 +13,6 @@ export default async function(req,res){
  if(b.status && !allowed.includes(b.status)) return res.status(400).json({error:"Invalid status",allowed});
  const q=await db.query("UPDATE clinic_follow_ups SET status=COALESCE($2,status), outcome=COALESCE($3,outcome), assigned_staff=COALESCE($4,assigned_staff), completed_at=CASE WHEN $2 IN ('Completed','Closed') THEN NOW() ELSE completed_at END, updated_at=NOW() WHERE id=$1 AND archived_at IS NULL RETURNING *",[id,b.status||null,b.outcome||null,b.assigned_staff||null]);
  if(!q.rows.length) return res.status(404).json({error:"Task not found"});
- await db.query("INSERT INTO clinic_audit_logs (actor,action,entity_type,entity_id) VALUES ($1,'update_follow_up','follow_up',$2)",[req.member?.email||"staff",id]);
+ await db.query("INSERT INTO clinic_audit_logs (actor,action,entity_type,entity_id) VALUES ($1,'update_follow_up','follow_up',$2)",[req.user?.email||"staff",id]);
  return res.json({row:q.rows[0]});
 }
